@@ -1,3 +1,5 @@
+# (Шебанг убран, по вашему требованию)
+
 exthostip=`ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p'`
 extsshport=30022
 
@@ -5,57 +7,71 @@ extsshport=30022
 cport=`shuf -i 30000-40000 -n 1`
 cpath="mysecpath$cport"
 
-# Имя пользователя для x-ui
+# Основной юзер x-ui
 mainuser1="mainuser1"
 username="$cport$mainuser1"
 
 # Генерируем пароль (20 символов)
 passwrd=`tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo ''`
-
-# Токен = пароль (x-ui)
-token="$passwrd"
+token="$passwrd"   # в x-ui user/token одинаковы
 
 saved_config="/opt/saved_config"
 d3xui_dir="/opt/3x-ui"
 
-# Порт для inbound (VLESS+REALITY), случайно 37000–39000
+# Порт inbound (для VLESS+Reality), случайно 37000–39000
 inboundport=`shuf -i 37000-39000 -n 1`
 
-# Пример JSON (копируем из вашей выборки, адаптируйте при необходимости)
-inbound_settings='{
-  "clients": [
-    {
-      "comment": "",
-      "email": "test1",
-      "enable": true,
-      "expiryTime": 0,
-      "flow": "",
-      "id": "141798c3-1297-4423-8e78-2087702e42f3",
-      "limitIp": 0,
-      "reset": 0,
-      "subId": "3yos4wehxu0wk1qc",
-      "tgId": "",
-      "totalGB": 0
-    },
-    {
-      "comment": "",
-      "email": "test2",
-      "enable": true,
-      "expiryTime": 0,
-      "flow": "xtls-rprx-vision",
-      "id": "3b8b9fa4-0db8-4d19-8d7f-10915ca9ce75",
-      "limitIp": 0,
-      "reset": 0,
-      "subId": "xjyx2twpr13puw8h",
-      "tgId": "",
-      "totalGB": 0
-    }
-  ],
+# ---- 1) Генерация Reality ключей и shortIds через docker xray ----
+# Установим Docker (ниже в скрипте он и так есть), но генерируем ДО вставки в SQLite.
+
+# Генерируем приватный ключ
+privateKey=$(docker run --rm teddysun/xray xray x25519 | awk '/Private key/ {print $NF; exit}')
+# Получаем публичный ключ из приватного
+publicKey=$(docker run --rm teddysun/xray xray x25519 --pub "$privateKey" | awk '/Public key/ {print $NF; exit}')
+
+# Генерируем shortIds (массив из 1-2 случайных hex)
+shortId=$(head /dev/urandom | tr -dc a-f0-9 | head -c 8)
+# Можно сделать массив на несколько shortIds, если хотите
+# shortIds='["4ca1ce8a","69d66d64","6dc2"]'
+shortIds="[\"$shortId\"]"
+
+# UUID для клиента (flow="xtls-rprx-vision")
+# (Можно сделать 1 клиент, или несколько)
+uuid1=$(cat /proc/sys/kernel/random/uuid)
+email1="myclient1"
+
+# Обратите внимание: если хотите flow="xtls-rprx-vision" у клиента, надо прописать flow в JSON.
+# Если у других клиентов нужно flow="", то просто дублируйте массив клиентов.
+
+clientsJson="[
+  {
+    \"email\": \"$email1\",
+    \"enable\": true,
+    \"expiryTime\": 0,
+    \"flow\": \"xtls-rprx-vision\",
+    \"id\": \"$uuid1\",
+    \"limitIp\": 0,
+    \"reset\": 0,
+    \"subId\": \"$(head /dev/urandom | tr -dc a-z0-9 | head -c 16)\",
+    \"tgId\": \"\",
+    \"totalGB\": 0
+  }
+]"
+
+# Собираем JSON: settings, stream, sniffing
+# (clients и "decryption": "none" + "fallbacks": [])
+inbound_settings=$(cat <<EOF
+{
+  "clients": $clientsJson,
   "decryption": "none",
   "fallbacks": []
-}'
+}
+EOF
+)
 
-inbound_stream='{
+# streamSettingsJson
+inbound_stream=$(cat <<EOF
+{
   "network": "tcp",
   "security": "reality",
   "externalProxy": [],
@@ -63,26 +79,14 @@ inbound_stream='{
     "show": false,
     "xver": 0,
     "dest": "gmail.com:443",
-    "serverNames": [
-      "gmail.com",
-      "www.gmail.com"
-    ],
-    "privateKey": "2FMRl2Wd1vwpn_3z8FtVg9lq_Vbg-MTQ_fXnVKSrEgM",
+    "serverNames": ["gmail.com","www.gmail.com"],
+    "privateKey": "$privateKey",
     "minClient": "",
     "maxClient": "",
     "maxTimediff": 0,
-    "shortIds": [
-      "4ca1ce8afce1",
-      "69d66d64969ec84a",
-      "6dc2",
-      "4b",
-      "9a0db8",
-      "38cc06cdd00d5e",
-      "9fc786a6",
-      "dcd6802715"
-    ],
+    "shortIds": $shortIds,
     "settings": {
-      "publicKey": "r2W5QniqCslTCmQG7r8d-OMN1uaBRu1O2O3nmZwx7zU",
+      "publicKey": "$publicKey",
       "fingerprint": "chrome",
       "serverName": "",
       "spiderX": "/"
@@ -90,32 +94,38 @@ inbound_stream='{
   },
   "tcpSettings": {
     "acceptProxyProtocol": false,
-    "header": {
-      "type": "none"
-    }
+    "header": { "type": "none" }
   }
-}'
+}
+EOF
+)
 
-inbound_sniff='{
+# sniffingSettingsJson
+inbound_sniff=$(cat <<EOF
+{
   "enabled": true,
   "destOverride": ["http","tls","quic","fakedns"],
   "metadataOnly": false,
   "routeOnly": false
-}'
+}
+EOF
+)
 
-inbound_allocate='{
+# allocateJson (часто не меняется, можно оставить)
+inbound_allocate=$(cat <<EOF
+{
   "strategy": "always",
   "refresh": 5,
   "concurrency": 3
-}'
+}
+EOF
+)
 
-# Обновление системы и установка необходимых пакетов
+# --------------------- Начало установки  ---------------------
 apt update && apt upgrade -y && apt install -y mc git sqlite3 apache2-utils
 
-# Установка Docker
 curl -fsSL get.docker.com | sh
 
-# Отключение системного логирования (по желанию)
 systemctl disable rsyslog
 systemctl stop rsyslog
 
@@ -145,20 +155,22 @@ if [ ! -f "$saved_config" ]; then
     git clone https://github.com/MHSanaei/3x-ui.git "$d3xui_dir"
     cd "$d3xui_dir"
 
-    # Первый запуск для инициализации базы
+    # Первый запуск x-ui (инициализация базы)
     docker compose up -d
     sleep 5
     docker compose down
 
-    # Настраиваем x-ui (админ-панель)
+    # Настройка x-ui (пользователь админ-панели)
     sqlite3 "$d3xui_dir/db/x-ui.db" 'DELETE FROM users WHERE id=1'
     sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'settings' VALUES(2,'webPort','$cport');"
     sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'settings' VALUES(3,'webBasePath','/$cpath/');"
-    sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'users' VALUES(1,'$username','$passwrd','$passwrd');"
+    sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'users' VALUES(1,'$username','$passwrd','$token');"
     sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'settings' VALUES(4,'secretEnable','true');"
 
-    # >>> Добавляем 1 inbound (vless+reality) на порт inboundport <<<
-    # id=2 — поменяйте, если уже занято.
+    # Добавляем inbound (vless + reality)
+    # id=2, remark='myInbound', enable=1
+    # Можно менять "1760124" / "2407799102" если хотите,
+    # это "createTime" и "updateTime" (x-ui обычно генерит).
     sqlite3 "$d3xui_dir/db/x-ui.db" "
     INSERT INTO inbounds
     VALUES(
@@ -180,55 +192,55 @@ if [ ! -f "$saved_config" ]; then
       '$inbound_allocate'
     );"
 
-    # Запуск x-ui
+    # Запуск x-ui со вставленным inbound
     docker compose up -d
 
-    # Установка Portainer (без лишних переменных)
+    # Установка Portainer
     docker volume create portainer_data
     docker run -d --restart=always \
-        --name portainer \
-        -p 8000:8000 \
-        -p 9000:9000 \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        -v portainer_data:/data \
-        portainer/portainer-ce:latest
+      --name portainer \
+      -p 8000:8000 \
+      -p 9000:9000 \
+      -v /var/run/docker.sock:/var/run/docker.sock \
+      -v portainer_data:/data \
+      portainer/portainer-ce:latest
 
     # Генерация bcrypt-хэша для wg-easy
     hashedpass=$(htpasswd -nbBC 10 "" "$passwrd" | cut -d ":" -f2)
 
-    # Установка wg-easy (WireGuard)
+    # Установка wg-easy
     docker volume create wg_data
     docker run -d --name wg-easy \
-        --restart=always \
-        -e WG_HOST="$exthostip" \
-        -e PASSWORD_HASH="$hashedpass" \
-        -v wg_data:/etc/wireguard \
-        -p 51820:51820/udp \
-        -p 51821:51821/tcp \
-        --cap-add NET_ADMIN \
-        ghcr.io/wg-easy/wg-easy:latest
+      --restart=always \
+      -e WG_HOST="$exthostip" \
+      -e PASSWORD_HASH="$hashedpass" \
+      -v wg_data:/etc/wireguard \
+      -p 51820:51820/udp \
+      -p 51821:51821/tcp \
+      --cap-add NET_ADMIN \
+      ghcr.io/wg-easy/wg-easy:latest
 
+    # Выводим итоги
     {
       echo "----------------- ADMIN PANEL (x-ui) -----------------"
       echo "URL: http://$exthostip:$cport/$cpath/panel"
       echo "Username: $username"
       echo "Password: $passwrd"
-      echo "Token: $passwrd"
+      echo "Token: $token"
       echo ""
-      echo "+++ Внимание: автоматически добавлен inbound +++"
-      echo "  Порт для inbound: $inboundport"
-      echo "  Протокол: vless + reality"
-      echo "-----------------------------------------------"
+      echo "+++ Inbound (vless + reality) +++"
+      echo "Порт: $inboundport"
+      echo "privateKey: $privateKey"
+      echo "publicKey : $publicKey"
+      echo "shortIds  : $shortId"
+      echo "UUID      : $uuid1  (flow=xtls-rprx-vision)"
+      echo "--------------------------------"
       echo "Portainer: http://$exthostip:9000"
-      echo "-----------------------------------------------"
-      echo "wg-easy (WireGuard) по адресу: http://$exthostip:51821"
-      echo "Пароль (plain) = $passwrd"
-      echo "bcrypt-хэш: $hashedpass"
-      echo "-----------------------------------------------"
+      echo "wg-easy: http://$exthostip:51821 (пароль = $passwrd)"
+      echo "--------------------------------"
       echo "Пожалуйста, перезагрузите сервер (reboot)."
-      echo "-----------------------------------------------"
-      echo "После перезагрузки, чтобы снова увидеть эти настройки,"
-      echo "выполните: cat /opt/saved_config"
-      echo "-----------------------------------------------"
+      echo "После перезагрузки, чтобы снова увидеть эти настройки:"
+      echo "  cat /opt/saved_config"
     } | tee "$saved_config"
+
 fi
