@@ -11,7 +11,7 @@ saved_config="/opt/saved_config"
 d3xui_dir="/opt/3x-ui"
 
 # Обновление системы и установка необходимых пакетов
-apt update && apt upgrade -y && apt install -y mc git sqlite
+apt update && apt upgrade -y && apt install -y mc git sqlite3
 
 # Установка Docker
 curl -fsSL get.docker.com | sh
