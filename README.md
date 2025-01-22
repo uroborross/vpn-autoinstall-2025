@@ -10,7 +10,7 @@ ssh root@"ip-address"
 ## Начните установку
 
 ```
-git clone https://github.com/uroborross/vpn-autoinstall-2025  
+git clone https://github.com/uroborross/vpn-autoinstall-2025.git /opt/vpn-autoinstall-2025
 bash /opt/vpn-autoinstall-2025/install_vpn.sh
 ```
 
@@ -36,7 +36,7 @@ ssh root@"ip-address"
 ## Start the installation
 
 ```
-git clone https://github.com/uroborross/vpn-autoinstall-2025  
+git clone https://github.com/uroborross/vpn-autoinstall-2025.git /opt/vpn-autoinstall-2025
 bash /opt/vpn-autoinstall-2025/install_vpn.sh
 ```
 
