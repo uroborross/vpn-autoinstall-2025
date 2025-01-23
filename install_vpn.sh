@@ -1,5 +1,3 @@
-# Скрипт без #!/usr/bin/env bash, по требованию.
-
 exthostip=`ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p'`
 extsshport=30022
 
@@ -7,9 +5,8 @@ extsshport=30022
 cport=`shuf -i 30000-40000 -n 1`
 cpath="mysecpath$cport"
 
-# Задаём "mainuser1"
-mainuser1="mainuser1"
-username="$cport$mainuser1"
+# Формируем username, комбинируя порт и слово "mainuser1"
+username="$cport""mainuser1"
 
 # Генерируем пароль (20 символов)
 passwrd=`tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo ''`
@@ -117,6 +114,9 @@ if [ ! -f "$saved_config" ]; then
       echo "bcrypt-хэш: $hashedpass"
       echo "-----------------------------------------------"
       echo "Пожалуйста, перезагрузите сервер (reboot)."
+      echo "-----------------------------------------------"
+      echo "После перезагрузки, чтобы снова увидеть эти настройки:"
+      echo "  cat /opt/saved_config"
       echo "-----------------------------------------------"
     } | tee "$saved_config"
 fi
