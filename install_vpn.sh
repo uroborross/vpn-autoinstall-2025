@@ -59,9 +59,6 @@ if [ ! -f "$saved_config" ]; then
     git clone https://github.com/MHSanaei/3x-ui.git "$d3xui_dir"
     cd "$d3xui_dir"
 
-    # <-- NEW: добавим volume в docker-compose.yml,
-    # чтобы контейнер видел /etc/letsencrypt:ro
-    sed -i '/services:/!b;:a;/x-ui:/!b;n;:c;/volumes:/!{n;bc};s/volumes:/volumes:\n      - \/etc\/letsencrypt:\/etc\/letsencrypt:ro/' docker-compose.yml
 
     # Первый запуск (для инициализации базы) и остановка
     docker compose up -d
@@ -74,6 +71,9 @@ if [ ! -f "$saved_config" ]; then
     sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'settings' VALUES(3,'webBasePath','/$cpath/');"
     sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'users' VALUES(1,'$username','$passwrd','$token');"
     sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'settings' VALUES(4,'secretEnable','true');"
+
+
+    sed -i '/^[[:space:]]*volumes:\s*$/ a \      - /etc/letsencrypt:/etc/letsencrypt:ro' docker-compose.yml
 
     # Запуск x-ui
     docker compose up -d
