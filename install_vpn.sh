@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 exthostip=`ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p'`
 extsshport=30022
 
@@ -18,7 +20,8 @@ saved_config="/opt/saved_config"
 d3xui_dir="/opt/3x-ui"
 
 # Обновление системы и установка необходимых пакетов
-apt update && apt upgrade -y && apt install -y mc git sqlite3 apache2-utils
+# <-- NEW: добавляем certbot
+apt update && apt upgrade -y && apt install -y mc git sqlite3 apache2-utils certbot
 
 # Установка Docker
 curl -fsSL get.docker.com | sh
@@ -56,7 +59,11 @@ if [ ! -f "$saved_config" ]; then
     git clone https://github.com/MHSanaei/3x-ui.git "$d3xui_dir"
     cd "$d3xui_dir"
 
-    # Первый запуск для инициализации базы
+    # <-- NEW: добавим volume в docker-compose.yml,
+    # чтобы контейнер видел /etc/letsencrypt:ro
+    sed -i '/services:/!b;:a;/x-ui:/!b;n;:c;/volumes:/!{n;bc};s/volumes:/volumes:\n      - \/etc\/letsencrypt:\/etc\/letsencrypt:ro/' docker-compose.yml
+
+    # Первый запуск (для инициализации базы) и остановка
     docker compose up -d
     sleep 5
     docker compose down
@@ -96,6 +103,20 @@ if [ ! -f "$saved_config" ]; then
         --cap-add NET_ADMIN \
         ghcr.io/wg-easy/wg-easy:latest
 
+    # /opt/ssl_guide
+    cat <<EOF > /opt/ssl_guide
+-----------------------------
+SSL СЕРТИФИКАТ
+-----------------------------
+1. В вашем регистраторе DNS или панели управления нужно создать A-запись, указывающую на IP сервера.
+2. Открыть порт 80 (sudo ufw allow 80/tcp).
+3. Запустить команду:
+   sudo certbot certonly --standalone --agree-tos --register-unsafely-without-email -d твой.домен
+4. В настройках 3x-ui (веб-панели) прописать пути:
+/etc/letsencrypt/live/твой.домен/fullchain.pem
+/etc/letsencrypt/live/твой.домен/privkey.pem
+EOF
+
     # Выводим информацию и сохраняем в /opt/saved_config
     {
       echo "----------------- ADMIN PANEL (x-ui) -----------------"
@@ -106,17 +127,19 @@ if [ ! -f "$saved_config" ]; then
       echo "-----------------------------------------------"
       echo "Portainer установлен. Доступен по адресу:"
       echo "http://$exthostip:9000"
-      echo "(При первом входе попросит создать учётку вручную)"
       echo "-----------------------------------------------"
       echo "wg-easy (WireGuard) доступен по адресу:"
       echo "http://$exthostip:51821"
       echo "Пароль (plain) = $passwrd"
       echo "bcrypt-хэш: $hashedpass"
       echo "-----------------------------------------------"
-      echo "Пожалуйста, перезагрузите сервер (reboot)."
-      echo "-----------------------------------------------"
       echo "После перезагрузки, чтобы снова увидеть эти настройки:"
       echo "  cat /opt/saved_config"
+      echo "-----------------------------------------------"
+      echo "Чтобы увидеть как установить SSl сертификат выполните:"
+      echo "  cat /opt/ssl_guide"
+      echo "-----------------------------------------------"
+      echo "Пожалуйста, перезагрузите сервер (reboot)."
       echo "-----------------------------------------------"
     } | tee "$saved_config"
 fi
