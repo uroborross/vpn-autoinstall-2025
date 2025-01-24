@@ -20,7 +20,6 @@ saved_config="/opt/saved_config"
 d3xui_dir="/opt/3x-ui"
 
 # Обновление системы и установка необходимых пакетов
-# <-- NEW: добавляем certbot
 apt update && apt upgrade -y && apt install -y mc git sqlite3 apache2-utils certbot
 
 # Установка Docker
@@ -72,7 +71,7 @@ if [ ! -f "$saved_config" ]; then
     sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'users' VALUES(1,'$username','$passwrd','$token');"
     sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'settings' VALUES(4,'secretEnable','true');"
 
-
+    # Добавляем строчку для certbot в  docker-compose.yml
     sed -i '/^[[:space:]]*volumes:\s*$/ a \      - /etc/letsencrypt:/etc/letsencrypt:ro' docker-compose.yml
 
     # Запуск x-ui
@@ -106,7 +105,7 @@ if [ ! -f "$saved_config" ]; then
     # /opt/ssl_guide
     cat <<EOF > /opt/ssl_guide
 -----------------------------
-SSL СЕРТИФИКАТ
+SSL GUIDE
 -----------------------------
 1. В вашем регистраторе DNS или панели управления нужно создать A-запись, указывающую на IP сервера.
 2. Открыть порт 80 (sudo ufw allow 80/tcp).
@@ -136,7 +135,7 @@ EOF
       echo "После перезагрузки, чтобы снова увидеть эти настройки:"
       echo "  cat /opt/saved_config"
       echo "-----------------------------------------------"
-      echo "Чтобы увидеть как установить SSl сертификат выполните:"
+      echo "Чтобы увидеть как установить SSl сертификат для 3x-ui выполните:"
       echo "  cat /opt/ssl_guide"
       echo "-----------------------------------------------"
       echo "Пожалуйста, перезагрузите сервер (reboot)."
