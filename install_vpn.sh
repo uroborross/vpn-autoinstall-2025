@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-exthostip=`ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p'`
+# Определяем публичный IP (можно переопределить переменной PUBLIC_IP)
+exthostip="${PUBLIC_IP:-}"
+if [ -z "$exthostip" ]; then
+    exthostip="$(curl -fsS https://api.ipify.org || true)"
+fi
+if [ -z "$exthostip" ]; then
+    exthostip="$(ip -o route get to 8.8.8.8 | sed -n 's/.*src \([0-9.]\+\).*/\1/p')"
+fi
 extsshport=30022
 
 # Случайный порт для x-ui
-cport=`shuf -i 30000-40000 -n 1`
+cport="$(shuf -i 30000-40000 -n 1)"
 cpath="mysecpath$cport"
 
 # Формируем username, комбинируя порт и слово "mainuser1"
 username="$cport""mainuser1"
 
 # Генерируем пароль (20 символов)
-passwrd=`tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo ''`
+passwrd="$(tr -dc A-Za-z0-9 </dev/urandom | head -c 20 ; echo '')"
 
 # Токен = пароль
 token="$passwrd"
@@ -20,10 +28,11 @@ saved_config="/opt/saved_config"
 d3xui_dir="/opt/3x-ui"
 
 # Обновление системы и установка необходимых пакетов
-apt update && apt upgrade -y && apt install -y mc git sqlite3 apache2-utils certbot
+apt update && apt upgrade -y && apt install -y mc git sqlite3 apache2-utils curl ufw
 
 # Установка Docker
 curl -fsSL get.docker.com | sh
+docker compose version >/dev/null 2>&1 || apt install -y docker-compose-plugin
 
 # Отключение системного логирования (по желанию)
 systemctl disable rsyslog
@@ -32,8 +41,12 @@ systemctl stop rsyslog
 # Проверка, не выполнен ли скрипт ранее
 if [ ! -f "$saved_config" ]; then
     # Изменяем SSH-порт
-    portstring=`cat /etc/ssh/sshd_config | egrep '^\#?Port'`
-    sed -i "s/$portstring/Port $extsshport/" /etc/ssh/sshd_config
+    if grep -qE '^\s*#?\s*Port\s+' /etc/ssh/sshd_config; then
+        sed -i -E "s/^\s*#?\s*Port\s+.*/Port $extsshport/" /etc/ssh/sshd_config
+    else
+        echo "Port $extsshport" >> /etc/ssh/sshd_config
+    fi
+    systemctl reload sshd
 
     # Включаем IP Forwarding
     (sysctl net.ipv4.ip_forward | grep 'forward = 1') || echo "net.ipv4.ip_forward = 1" >> /etc/sysctl.conf
@@ -58,21 +71,17 @@ if [ ! -f "$saved_config" ]; then
     git clone https://github.com/MHSanaei/3x-ui.git "$d3xui_dir"
     cd "$d3xui_dir"
 
-
-    # Первый запуск (для инициализации базы) и остановка
+    # Первый запуск для инициализации базы
     docker compose up -d
     sleep 5
     docker compose down
 
     # Настраиваем x-ui в базе SQLite
     sqlite3 "$d3xui_dir/db/x-ui.db" 'DELETE FROM users WHERE id=1'
-    sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'settings' VALUES(2,'webPort','$cport');"
-    sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'settings' VALUES(3,'webBasePath','/$cpath/');"
+    sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT OR REPLACE INTO 'settings' VALUES(2,'webPort','$cport');"
+    sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT OR REPLACE INTO 'settings' VALUES(3,'webBasePath','/$cpath/');"
     sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'users' VALUES(1,'$username','$passwrd','$token');"
-    sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT INTO 'settings' VALUES(4,'secretEnable','true');"
-
-    # Добавляем строчку для certbot в  docker-compose.yml
-    sed -i '/^[[:space:]]*volumes:\s*$/ a \      - /etc/letsencrypt:/etc/letsencrypt:ro' docker-compose.yml
+    sqlite3 "$d3xui_dir/db/x-ui.db" "INSERT OR REPLACE INTO 'settings' VALUES(4,'secretEnable','true');"
 
     # Запуск x-ui
     docker compose up -d
@@ -102,20 +111,6 @@ if [ ! -f "$saved_config" ]; then
         --cap-add NET_ADMIN \
         ghcr.io/wg-easy/wg-easy:latest
 
-    # /opt/ssl_guide
-    cat <<EOF > /opt/ssl_guide
------------------------------
-SSL GUIDE
------------------------------
-1. В вашем регистраторе DNS или панели управления нужно создать A-запись, указывающую на IP сервера.
-2. Открыть порт 80 (sudo ufw allow 80/tcp).
-3. Запустить команду:
-   sudo certbot certonly --standalone --agree-tos --register-unsafely-without-email -d твой.домен
-4. В настройках 3x-ui (веб-панели) прописать пути:
-/etc/letsencrypt/live/твой.домен/fullchain.pem
-/etc/letsencrypt/live/твой.домен/privkey.pem
-EOF
-
     # Выводим информацию и сохраняем в /opt/saved_config
     {
       echo "----------------- ADMIN PANEL (x-ui) -----------------"
@@ -126,19 +121,17 @@ EOF
       echo "-----------------------------------------------"
       echo "Portainer установлен. Доступен по адресу:"
       echo "http://$exthostip:9000"
+      echo "(При первом входе попросит создать учётку вручную)"
       echo "-----------------------------------------------"
       echo "wg-easy (WireGuard) доступен по адресу:"
       echo "http://$exthostip:51821"
       echo "Пароль (plain) = $passwrd"
       echo "bcrypt-хэш: $hashedpass"
       echo "-----------------------------------------------"
+      echo "Пожалуйста, перезагрузите сервер (reboot)."
+      echo "-----------------------------------------------"
       echo "После перезагрузки, чтобы снова увидеть эти настройки:"
       echo "  cat /opt/saved_config"
-      echo "-----------------------------------------------"
-      echo "Чтобы увидеть как установить SSl сертификат для 3x-ui выполните:"
-      echo "  cat /opt/ssl_guide"
-      echo "-----------------------------------------------"
-      echo "Пожалуйста, перезагрузите сервер (reboot)."
       echo "-----------------------------------------------"
     } | tee "$saved_config"
 fi
