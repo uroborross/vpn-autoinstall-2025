@@ -1,71 +1,114 @@
-# VPN-autoinstall 2025 RU
-## Подключитесь к новому серверу на Ubuntu 22 (от root)
+# VPN-autoinstall — Ubuntu 24.04 LTS
 
-```
-ssh root@"ip-address"
-```
+Ставит на чистый сервер: **3x-ui** (панель Xray), **wg-easy** (WireGuard),
+**Portainer**, опционально **AmneziaWG** — обфусцированный WireGuard на ядерном
+модуле, который переживает DPI там, где обычный WireGuard режут.
 
-"введите ваш пароль"
+Актуализировано 2026-07-26.
 
-## Начните установку
+## Установка
 
-```
-git clone https://github.com/uroborross/vpn-autoinstall-2025.git /opt/vpn-autoinstall-2025
-bash /opt/vpn-autoinstall-2025/install_vpn.sh
-```
+Подключитесь к новому серверу от root:
 
-## После выполнения установки SSH порт изменился (по умолчанию 30022)
-
-```
-ssh -p 30022 root@"ip-address"
+```bash
+ssh root@IP-АДРЕС
 ```
 
-"введите ваш пароль"
+Запустите установку:
 
-## Где посмотреть параметры после установки
-
+```bash
+git clone https://github.com/uroborross/vpn-autoinstall-2025.git /opt/vpn-autoinstall
+bash /opt/vpn-autoinstall/install_vpn.sh
 ```
+
+С AmneziaWG (нужны `linux-headers` для текущего ядра — на стандартной Ubuntu
+они уже есть):
+
+```bash
+bash /opt/vpn-autoinstall/install_vpn.sh --with-awg
+```
+
+## После установки
+
+SSH переехал на порт `30022`; старый `22` остаётся открытым, пока вы не
+проверите новый и не закроете его вручную:
+
+```bash
+ssh -p 30022 root@IP-АДРЕС
+ufw delete allow 22/tcp
+```
+
+Все параметры и пароли:
+
+```bash
 cat /opt/saved_config
 ```
 
-## Примечания
-- Используется публичный IP (можно переопределить переменной `PUBLIC_IP`)
-- Скрипт применяет новый SSH-порт сразу (делает reload sshd)
-- Рекомендуется перезагрузить сервер после завершения установки
+## Что доступно снаружи, а что нет
 
----
+| Сервис | Доступ |
+| --- | --- |
+| 3x-ui | публично, случайный порт + случайный путь, логин/пароль в `saved_config` |
+| wg-easy UDP | публично, `51820/udp` |
+| wg-easy панель | **только localhost** — через SSH-туннель |
+| Portainer | **только localhost** — через SSH-туннель |
+| AmneziaWG | публично, `51822/udp` (меняется `--awg-port`) |
 
-# VPN-autoinstall 2025 EN
-## Connect to the new server on Ubuntu 22 (as root)
+Панели не выставлены наружу намеренно: это админ-доступ к серверу и ко всем
+VPN-клиентам. Туннель:
 
-```
-ssh root@"ip-address"
-```
-
-"enter your password"
-
-## Start the installation
-
-```
-git clone https://github.com/uroborross/vpn-autoinstall-2025.git /opt/vpn-autoinstall-2025
-bash /opt/vpn-autoinstall-2025/install_vpn.sh
+```bash
+ssh -p 30022 -L 9000:127.0.0.1:9000 -L 51821:127.0.0.1:51821 root@IP-АДРЕС
 ```
 
-## After installation, the SSH port has changed (default 30022)
+Затем Portainer — `http://127.0.0.1:9000`, wg-easy — `http://127.0.0.1:51821`.
 
-```
-ssh -p 30022 root@"ip-address"
-```
+## AmneziaWG
 
-"enter your password"
+Конфиг клиента создаётся сразу: `/etc/amnezia/amneziawg/client.conf`.
 
-## Where to view settings after install
-
-```
-cat /opt/saved_config
+```bash
+scp -P 30022 root@IP-АДРЕС:/etc/amnezia/amneziawg/client.conf .
 ```
 
-## Notes
-- Uses public IP (override with `PUBLIC_IP`)
-- Applies new SSH port immediately (reloads sshd)
-- Reboot is recommended after install
+Импортируется в приложение AmneziaVPN или в роутер Keenetic (KeeneticOS 5.1+,
+«Другие подключения» → загрузить из файла). Параметры обфускации (`Jc/Jmin/Jmax`,
+`S1/S2`, `H1–H4`) генерируются случайно и обязаны совпадать на обеих сторонах —
+именно поэтому клиентский конфиг нужно брать готовым, а не собирать вручную.
+
+Модуль поддерживает и параметры AmneziaWG 2.0 (`S3/S4`, `I1–I5`); по умолчанию
+они не включены ради совместимости с прошивками, которые их ещё не принимают.
+
+## Опции
+
+| Опция | Назначение |
+| --- | --- |
+| `--with-awg` | поставить AmneziaWG |
+| `--awg-port PORT` | UDP-порт AmneziaWG (по умолчанию 51822) |
+| `--ssh-port PORT` | новый SSH-порт (по умолчанию 30022) |
+| `--disable-rsyslog` | отключить системное логирование |
+
+Переменные окружения: `PUBLIC_IP`, `XUI_PORT`, `XUI_VERSION`,
+`WGEASY_VERSION`, `AWG_SUBNET`.
+
+## Важное про версии
+
+- **3x-ui закреплён на теге** (`XUI_VERSION`, сейчас `v3.5.0`). Плавающий
+  `latest` уже ломал установки при смене схемы БД.
+- **wg-easy закреплён на мажорной `15`.** В v15 переменная `PASSWORD_HASH`
+  больше не поддерживается: администратор создаётся при первом входе в панель.
+  Скрипты со старой схемой на актуальном образе молча остаются без пароля.
+- Настройки 3x-ui задаются штатной командой `x-ui setting`, а не прямой
+  правкой SQLite по числовым id — так установка не ломается при изменении схемы.
+
+## Повторный запуск
+
+Если `/opt/saved_config` существует, скрипт ничего не делает и просто
+сообщает об этом. Чтобы переустановить — удалите файл осознанно.
+
+## Проверка скрипта
+
+```bash
+bash -n install_vpn.sh
+shellcheck install_vpn.sh
+```
