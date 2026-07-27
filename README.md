@@ -17,7 +17,7 @@ ssh root@IP-АДРЕС
 Запустите установку:
 
 ```bash
-git clone https://github.com/uroborross/vpn-autoinstall-2025.git /opt/vpn-autoinstall
+git clone https://github.com/uroborross/vpn-autoinstall-2026.git /opt/vpn-autoinstall
 bash /opt/vpn-autoinstall/install_vpn.sh
 ```
 
