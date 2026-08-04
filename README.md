@@ -20,7 +20,8 @@ ssh -t dev-host "cd ~/dev/'Lab + Agents'/projects/vpn_autoinstall_2026 && codex"
 ```
 
 - С Mac в GUI: Claude Code → окружение dev-host → эта папка.
-- Забрать диалог на телефон: `/remote-control` внутри сессии (работает в терминальной сессии; из Desktop-обёртки пока падает — баг клиента, task 207).
+- Телефон/Remote Control: актуальный общий статус и ограничения —
+  `~/dev/README.md`, раздел «Телефон и Remote Control».
 
 > Установщик — root-level и меняет SSH, UFW, Docker и `/opt`. Локально его не
 > запускать; удалённо — только по прямой команде пользователя.
