@@ -20,8 +20,8 @@ ssh -t dev-host "cd ~/dev/'Lab + Agents'/projects/vpn_autoinstall_2026 && codex"
 ```
 
 - С Mac в GUI: Claude Code → окружение dev-host → эта папка.
-- Телефон/Remote Control: актуальный общий статус и ограничения —
-  `~/dev/README.md`, раздел «Телефон и Remote Control».
+- Телефон: флоу запуска (Termius → tmux → claude) — `~/dev/README.md`,
+  раздел «⚡ Быстрый старт агента».
 
 > Установщик — root-level и меняет SSH, UFW, Docker и `/opt`. Локально его не
 > запускать; удалённо — только по прямой команде пользователя.
